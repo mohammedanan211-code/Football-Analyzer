@@ -72,7 +72,7 @@ def classify_player_role(features: dict) -> str:
     goals = features.get("goals", 0)
     prog  = features.get("progressive_pct", 0)
 
-    if x < 25:    return "Goalkeeper / Sweeper"
+    if x < 25:    return "Goalkeeper"
     if x < 40:    return "Central Defender"
     if x < 50 and prog > 30: return "Ball-Playing Defender"
     if x < 55:    return "Defensive Midfielder"
@@ -100,7 +100,8 @@ def _scale(val, max_val):
 
 def plot_player_radar(features_list: list[dict],
                       labels: list[str],
-                      figsize=(9, 9)) -> plt.Figure:
+                      figsize=(9, 9),
+                      player_colors=None) -> plt.Figure:
     """
     Radar (spider) chart comparing up to 3 players.
     """
@@ -125,7 +126,7 @@ def plot_player_radar(features_list: list[dict],
     ax.grid(color="#2a3a5c", linewidth=0.7, alpha=0.6)
     ax.set_ylim(0, 1)
 
-    colors = ["#FFD700", "#4fc3f7", "#ff6b6b", "#90ee90"]
+    colors = player_colors if player_colors else ["#FFD700", "#4fc3f7", "#ff6b6b", "#90ee90"]
     for i, (feats, label) in enumerate(zip(features_list, labels)):
         values = [_scale(feats.get(m[1], 0), m[2]) for m in RADAR_METRICS]
         values += values[:1]
@@ -157,7 +158,8 @@ TEAM_RADAR_METRICS = [
 
 def plot_team_radar(features_list: list[dict],
                     labels: list[str],
-                    figsize=(9, 9)) -> plt.Figure:
+                    figsize=(9, 9),
+                    team_colors=None) -> plt.Figure:
     """
     Radar chart comparing two or more teams on tactical metrics.
     """
@@ -180,7 +182,7 @@ def plot_team_radar(features_list: list[dict],
     ax.grid(color="#2a3a5c", linewidth=0.7, alpha=0.6)
     ax.set_ylim(0, 1)
 
-    colors = ["#4fc3f7", "#ff8c00", "#FFD700", "#ff6b6b"]
+    colors = team_colors if team_colors else ["#4fc3f7", "#ff8c00", "#FFD700", "#ff6b6b"]
     for i, (feats, label) in enumerate(zip(features_list, labels)):
         values = [_scale(feats.get(m[1], 0), m[2]) for m in TEAM_RADAR_METRICS]
         values += values[:1]

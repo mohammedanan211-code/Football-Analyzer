@@ -151,7 +151,7 @@ def plot_player_heatmap(events_df: pd.DataFrame, player_name: str,
 # ─── Shot map ────────────────────────────────────────────────────────────────
 
 def plot_shot_map(events_df: pd.DataFrame, team_name: str,
-                  figsize=(13, 8.5)) -> plt.Figure:
+                  figsize=(13, 8.5), goal_color="#FFD700") -> plt.Figure:
     """Visualise shot locations, outcomes, and a goal mouth diagram."""
     shots = events_df[
         (events_df["type"] == "Shot") &
@@ -174,7 +174,7 @@ def plot_shot_map(events_df: pd.DataFrame, team_name: str,
 
     if not shots.empty:
         outcome_colors = {
-            "Goal": "#FFD700",
+            "Goal": goal_color,
             "Saved": "#4fc3f7",
             "Off T": "#ff6b6b",
             "Blocked": "#bb86fc",
@@ -216,7 +216,7 @@ def plot_shot_map(events_df: pd.DataFrame, team_name: str,
         if not goals.empty:
             gx = goals["end_y"].clip(32, 48)
             gy = np.random.uniform(0.1, 2.2, len(goals))
-            ax2.scatter(gx, gy, c="#FFD700", s=120, zorder=5,
+            ax2.scatter(gx, gy, c=goal_color, s=120, zorder=5,
                         edgecolors="white", lw=0.5, marker="*")
 
     ax2.set_title("Goal Mouth", color="white", fontsize=9, fontweight="bold")
@@ -231,7 +231,7 @@ def plot_shot_map(events_df: pd.DataFrame, team_name: str,
 # ─── Progressive pass map ────────────────────────────────────────────────────
 
 def plot_progressive_passes(events_df: pd.DataFrame, team_name: str,
-                             figsize=(13, 8.5)) -> plt.Figure:
+                             figsize=(13, 8.5), color="#00ff88") -> plt.Figure:
     """
     Map passes that advance the ball significantly towards the goal.
     Progressive = end_x - start_x > 10 AND crosses a third boundary.
@@ -262,7 +262,7 @@ def plot_progressive_passes(events_df: pd.DataFrame, team_name: str,
 
     prog_gain = prog["end_x"] - prog["x"]
     norm = plt.Normalize(vmin=prog_gain.min(), vmax=prog_gain.max())
-    cmap = CMAP_GREEN
+    cmap = LinearSegmentedColormap.from_list("prog_dynamic", ["#0d1a2d", color])
 
     for _, row in prog.iterrows():
         gain = row["end_x"] - row["x"]

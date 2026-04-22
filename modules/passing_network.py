@@ -79,17 +79,22 @@ def build_passing_network(events_df: pd.DataFrame, min_passes: int = 2):
     if passes.empty:
         return nx.DiGraph(), {}, pd.DataFrame()
 
-    # ── Edge weights ─────────────────────────────────────────────────────────
-    edge_counts = (
+    # ── Edge weights & lengths ───────────────────────────────────────────────
+    edge_data = (
         passes.groupby(["player_name", "recipient_name"])
-        .size()
-        .reset_index(name="weight")
+        .agg(
+            weight=("type", "size"),
+            avg_length=("pass_length", "mean")
+        )
+        .reset_index()
     )
-    edge_counts = edge_counts[edge_counts["weight"] >= min_passes]
+    edge_data = edge_data[edge_data["weight"] >= min_passes]
 
     G = nx.DiGraph()
-    for _, row in edge_counts.iterrows():
-        G.add_edge(row["player_name"], row["recipient_name"], weight=int(row["weight"]))
+    for _, row in edge_data.iterrows():
+        G.add_edge(row["player_name"], row["recipient_name"], 
+                   weight=int(row["weight"]),
+                   avg_length=float(row["avg_length"]))
 
     # ── Node average positions ────────────────────────────────────────────────
     passer_pos = passes.groupby("player_name")[["x", "y"]].mean()
@@ -140,7 +145,8 @@ def build_passing_network(events_df: pd.DataFrame, min_passes: int = 2):
 # ─── Visualisation ───────────────────────────────────────────────────────────
 
 def plot_passing_network(G, node_positions, metrics_df, team_name: str,
-                         figsize=(14, 9)) -> plt.Figure:
+                         figsize=(14, 9), player_color="#4fc3f7", playmaker_color="#FFD700",
+                         short_pass_color="#4fc3f7", long_pass_color="#ff8c00") -> plt.Figure:
     """
     Render a beautiful passing network on a dark pitch.
     """
@@ -154,18 +160,24 @@ def plot_passing_network(G, node_positions, metrics_df, team_name: str,
 
     # ── Edges ─────────────────────────────────────────────────────────────────
     edge_weights = [G[u][v]["weight"] for u, v in G.edges()]
+    edge_lengths = [G[u][v].get("avg_length", 15) for u, v in G.edges()]
+    
     max_w = max(edge_weights) if edge_weights else 1
-    norm = Normalize(vmin=0, vmax=max_w)
-    cmap = plt.get_cmap("YlOrRd")
+    
+    # Color map for length: Short Color -> Long Color
+    from matplotlib.colors import LinearSegmentedColormap
+    length_cmap = LinearSegmentedColormap.from_list("pass_length_cmap", [short_pass_color, long_pass_color])
+    norm_len = Normalize(vmin=10, vmax=35) # standard range for short to long
 
-    for (u, v), w in zip(G.edges(), edge_weights):
+    for (u, v), w, l in zip(G.edges(), edge_weights, edge_lengths):
         if u not in node_positions or v not in node_positions:
             continue
         x1, y1 = node_positions[u]
         x2, y2 = node_positions[v]
-        alpha = 0.3 + 0.6 * (w / max_w)
-        lw = 0.5 + 3.5 * (w / max_w)
-        color = cmap(norm(w))
+        alpha = 0.4 + 0.5 * (w / max_w)
+        lw = 1.0 + 4.0 * (w / max_w)
+        color = length_cmap(norm_len(l))
+        
         ax.annotate("",
                     xy=(x2, y2), xytext=(x1, y1),
                     arrowprops=dict(
@@ -187,7 +199,7 @@ def plot_passing_network(G, node_positions, metrics_df, team_name: str,
         is_playmaker = bool(m["is_playmaker"]) if m is not None else False
         bc = float(m["betweenness_centrality"]) if m is not None else 0
         size = 150 + 800 * bc
-        color = "#FFD700" if is_playmaker else "#4fc3f7"
+        color = playmaker_color if is_playmaker else player_color
         edge_c = "#FF6B35" if is_playmaker else "#1565C0"
 
         ax.scatter(x, y, s=size, c=color, edgecolors=edge_c,
@@ -202,8 +214,8 @@ def plot_passing_network(G, node_positions, metrics_df, team_name: str,
 
     # ── Legend & title ────────────────────────────────────────────────────────
     legend_elements = [
-        mpatches.Patch(color="#FFD700", label="Playmaker (Top 3)"),
-        mpatches.Patch(color="#4fc3f7", label="Player"),
+        mpatches.Patch(color=playmaker_color, label="Playmaker (Top 3)"),
+        mpatches.Patch(color=player_color, label="Player"),
     ]
     ax.legend(handles=legend_elements, loc="lower right",
               facecolor="#0d1a2d", edgecolor="#2a3a5c",
@@ -211,7 +223,7 @@ def plot_passing_network(G, node_positions, metrics_df, team_name: str,
 
     fig.suptitle(f"{team_name} — Passing Network",
                  color="white", fontsize=15, fontweight="bold", y=0.97)
-    ax.set_title("Node size = betweenness centrality  |  Gold = playmaker",
+    ax.set_title("Node size = centrality | Arrow thickness = frequency | Color = pass length (Short → Long)",
                  color="#8899aa", fontsize=9, pad=6)
 
     plt.tight_layout()

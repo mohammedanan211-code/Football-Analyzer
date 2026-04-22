@@ -148,6 +148,29 @@ with st.sidebar:
     n_passes = st.slider("Simulated Passes (Data Size)", 200, 800, 450, step=50)
     min_passes_network = st.slider("Min Passes for Network Edge", 1, 8, 3)
 
+    st.divider()
+    st.markdown("### 🎨 Visual Styles")
+    col_c1, col_c2 = st.columns(2)
+    with col_c1:
+        c_short = st.color_picker("Short Pass", "#4fc3f7")
+        c_playmaker = st.color_picker("Playmaker", "#FFD700")
+    with col_c2:
+        c_long = st.color_picker("Long Pass", "#ff8c00")
+        c_accent = st.color_picker("Accent / Goal", "#00ff88")
+    
+    viz_colors = {
+        "short": c_short,
+        "long": c_long,
+        "playmaker": c_playmaker,
+        "accent": c_accent
+    }
+
+    st.divider()
+    st.markdown("### 🔍 Tactical Filters")
+    f_short = st.checkbox("Show Short Passes (<15m)", value=True)
+    f_medium = st.checkbox("Show Medium Passes (15-32m)", value=True)
+    f_long = st.checkbox("Show Long Passes (>32m)", value=True)
+
 #     st.divider()
 #     st.markdown("### 📂 Use Real StatsBomb Data")
 #     st.code("""
@@ -240,8 +263,8 @@ if compare_mode:
 # ─── Computed metrics (cached per team) ──────────────────────────────────────
 
 @st.cache_data(show_spinner=False)
-def compute_team_metrics(team_name: str, n: int):
-    ev = all_data[team_name]
+def compute_team_metrics(team_name: str, n: int, events_df=None):
+    ev = events_df if events_df is not None else all_data[team_name]
     G, node_pos, metrics_df = build_passing_network(ev, min_passes=min_passes_network)
     features = extract_tactical_features(ev, team_name)
     style, style_desc, style_scores = classify_tactical_style(features)
@@ -259,12 +282,28 @@ def compute_team_metrics(team_name: str, n: int):
         "shifts_df": shifts_df,
     }
 
+events_raw = all_data[selected_team]
+
+# ─── Pass Length Filtering ───────────────────────────────────────────────
+def apply_pass_filters(df):
+    if "pass_length" not in df.columns: return df
+    pass_mask = (df["type"] == "Pass")
+    len_mask = pd.Series(False, index=df.index)
+    if f_short:  len_mask |= (df["pass_length"] < 15)
+    if f_medium: len_mask |= (df["pass_length"].between(15, 32))
+    if f_long:   len_mask |= (df["pass_length"] > 32)
+    return df[~pass_mask | len_mask]
+
+events = apply_pass_filters(events_raw)
+if compare_mode:
+    events_other = apply_pass_filters(all_data[other_team])
+
 with st.spinner(f"🧠 Analysing {selected_team}..."):
-    m = compute_team_metrics(selected_team, n_passes)
+    m = compute_team_metrics(selected_team, n_passes, events_df=events)
 
 if compare_mode:
     with st.spinner(f"🧠 Analysing {other_team}..."):
-        m2 = compute_team_metrics(other_team, n_passes)
+        m2 = compute_team_metrics(other_team, n_passes, events_df=events_other)
     f2 = m2["features"]
 
 
@@ -298,7 +337,9 @@ if page == "🏠 Overview":
 
         with col_left:
             st.markdown("### 🕸️ Quick — Passing Network")
-            fig = plot_passing_network(m["G"], m["node_pos"], m["metrics_df"], selected_team, figsize=(12,7))
+            fig = plot_passing_network(m["G"], m["node_pos"], m["metrics_df"], selected_team, figsize=(12,7), 
+                                       player_color=viz_colors["short"], playmaker_color=viz_colors["playmaker"],
+                                       short_pass_color=viz_colors["short"], long_pass_color=viz_colors["long"])
             st.pyplot(fig); plt.close(fig)
 
         with col_right:
@@ -325,7 +366,9 @@ if page == "🏠 Overview":
             st.metric("Total Passes", f.get("total_passes", 0))
             st.metric("Completion %", f"{f.get('completion_rate',0)*100:.1f}%")
             st.metric("Territory %", f"{f.get('territory_pct',0)*100:.1f}%")
-            fig = plot_passing_network(m["G"], m["node_pos"], m["metrics_df"], selected_team, figsize=(8,6))
+            fig = plot_passing_network(m["G"], m["node_pos"], m["metrics_df"], selected_team, figsize=(8,6),
+                                       player_color=viz_colors["short"], playmaker_color=viz_colors["playmaker"],
+                                       short_pass_color=viz_colors["short"], long_pass_color=viz_colors["long"])
             st.pyplot(fig); plt.close(fig)
         
         with c2:
@@ -335,7 +378,9 @@ if page == "🏠 Overview":
             st.metric("Total Passes", f2.get("total_passes", 0))
             st.metric("Completion %", f"{f2.get('completion_rate',0)*100:.1f}%")
             st.metric("Territory %", f"{f2.get('territory_pct',0)*100:.1f}%")
-            fig2 = plot_passing_network(m2["G"], m2["node_pos"], m2["metrics_df"], other_team, figsize=(8,6))
+            fig2 = plot_passing_network(m2["G"], m2["node_pos"], m2["metrics_df"], other_team, figsize=(8,6),
+                                        player_color=viz_colors["short"], playmaker_color=viz_colors["playmaker"],
+                                        short_pass_color=viz_colors["short"], long_pass_color=viz_colors["long"])
             st.pyplot(fig2); plt.close(fig2)
 
 
@@ -347,18 +392,24 @@ elif page == "🕸️ Passing Network":
     if not compare_mode:
         st.markdown(f"# 🕸️ Passing Network — {selected_team}")
         st.caption("Node size = betweenness centrality | Gold = playmaker | Arrow thickness = pass frequency")
-        fig = plot_passing_network(m["G"], m["node_pos"], m["metrics_df"], selected_team, figsize=(14, 9))
+        fig = plot_passing_network(m["G"], m["node_pos"], m["metrics_df"], selected_team, figsize=(14, 9),
+                                   player_color=viz_colors["short"], playmaker_color=viz_colors["playmaker"],
+                                   short_pass_color=viz_colors["short"], long_pass_color=viz_colors["long"])
         st.pyplot(fig, use_container_width=True); plt.close(fig)
     else:
         st.markdown(f"# 🕸️ Passing Network Comparison")
         c1, c2 = st.columns(2)
         with c1:
             st.markdown(f"#### {selected_team}")
-            fig = plot_passing_network(m["G"], m["node_pos"], m["metrics_df"], selected_team, figsize=(9, 8))
+            fig = plot_passing_network(m["G"], m["node_pos"], m["metrics_df"], selected_team, figsize=(9, 8),
+                                       player_color=viz_colors["short"], playmaker_color=viz_colors["playmaker"],
+                                       short_pass_color=viz_colors["short"], long_pass_color=viz_colors["long"])
             st.pyplot(fig, use_container_width=True); plt.close(fig)
         with c2:
             st.markdown(f"#### {other_team}")
-            fig2 = plot_passing_network(m2["G"], m2["node_pos"], m2["metrics_df"], other_team, figsize=(9, 8))
+            fig2 = plot_passing_network(m2["G"], m2["node_pos"], m2["metrics_df"], other_team, figsize=(9, 8),
+                                        player_color=viz_colors["short"], playmaker_color=viz_colors["playmaker"],
+                                        short_pass_color=viz_colors["short"], long_pass_color=viz_colors["long"])
             st.pyplot(fig2, use_container_width=True); plt.close(fig2)
 
     st.divider()
@@ -432,12 +483,12 @@ elif page == "🔥 Heatmaps":
     with tab2:
         st.caption("Shot locations, outcomes, and goal mouth diagram")
         if not compare_mode:
-            fig = plot_shot_map(events, selected_team, figsize=(14, 8))
+            fig = plot_shot_map(events, selected_team, figsize=(14, 8), goal_color=viz_colors["playmaker"])
             st.pyplot(fig, use_container_width=True); plt.close(fig)
         else:
             c1, c2 = st.columns(2)
-            with c1: st.pyplot(plot_shot_map(events, selected_team, figsize=(9,7))); plt.close()
-            with c2: st.pyplot(plot_shot_map(events_other, other_team, figsize=(9,7))); plt.close()
+            with c1: st.pyplot(plot_shot_map(events, selected_team, figsize=(9,7), goal_color=viz_colors["playmaker"])); plt.close()
+            with c2: st.pyplot(plot_shot_map(events_other, other_team, figsize=(9,7), goal_color=viz_colors["playmaker"])); plt.close()
 
         shots = events[events["type"] == "Shot"]
         goals = shots[shots["outcome"] == "Goal"]
@@ -449,12 +500,12 @@ elif page == "🔥 Heatmaps":
     with tab3:
         st.caption("Passes that advance the ball ≥10m towards goal")
         if not compare_mode:
-            fig = plot_progressive_passes(events, selected_team, figsize=(13, 8))
+            fig = plot_progressive_passes(events, selected_team, figsize=(13, 8), color=viz_colors["long"])
             st.pyplot(fig, use_container_width=True); plt.close(fig)
         else:
             c1, c2 = st.columns(2)
-            with c1: st.pyplot(plot_progressive_passes(events, selected_team, figsize=(9,7))); plt.close()
-            with c2: st.pyplot(plot_progressive_passes(events_other, other_team, figsize=(9,7))); plt.close()
+            with c1: st.pyplot(plot_progressive_passes(events, selected_team, figsize=(9,7), color=viz_colors["long"])); plt.close()
+            with c2: st.pyplot(plot_progressive_passes(events_other, other_team, figsize=(9,7), color=viz_colors["long"])); plt.close()
 
     with tab4:
         st.caption("Individual player position heatmap")
@@ -719,7 +770,10 @@ elif page == "👤 Player Analysis":
         st.markdown("### 🕸️ Radar Comparison")
         f1 = extract_player_features(events, p1)
         f2 = extract_player_features(events, p2)
-        fig = plot_player_radar([f1, f2], [p1, p2], figsize=(8, 8))
+        fig = plot_player_radar(
+            [f1, f2], [p1, p2], figsize=(8, 8),
+            player_colors=[viz_colors["short"], viz_colors["long"]]
+        )
         st.pyplot(fig, use_container_width=True)
         plt.close(fig)
 
@@ -762,7 +816,10 @@ elif page == "🆚 Team Comparison":
         st.markdown("### 🕸️ Tactical DNA Comparison")
         col_radar_l, col_radar_r = st.columns([1.2, 1])
         with col_radar_l:
-            fig_radar = plot_team_radar([f1, f2], [t1, t2], figsize=(9, 8))
+            fig_radar = plot_team_radar(
+                [f1, f2], [t1, t2], figsize=(9, 8),
+                team_colors=[viz_colors["short"], viz_colors["long"]]
+            )
             st.pyplot(fig_radar, use_container_width=True)
             plt.close(fig_radar)
         with col_radar_r:
@@ -872,12 +929,16 @@ elif page == "🆚 Team Comparison":
         nc1, nc2 = st.columns(2)
         with nc1:
             st.markdown(f"**{t1}**")
-            fig_n1 = plot_passing_network(m1["G"], m1["node_pos"], m1["metrics_df"], t1, figsize=(8,6))
+            fig_n1 = plot_passing_network(m1["G"], m1["node_pos"], m1["metrics_df"], t1, figsize=(8,6),
+                                          player_color=viz_colors["short"], playmaker_color=viz_colors["playmaker"],
+                                          short_pass_color=viz_colors["short"], long_pass_color=viz_colors["long"])
             st.pyplot(fig_n1, use_container_width=True)
             plt.close(fig_n1)
         with nc2:
             st.markdown(f"**{t2}**")
-            fig_n2 = plot_passing_network(m2["G"], m2["node_pos"], m2["metrics_df"], t2, figsize=(8,6))
+            fig_n2 = plot_passing_network(m2["G"], m2["node_pos"], m2["metrics_df"], t2, figsize=(8,6),
+                                          player_color=viz_colors["short"], playmaker_color=viz_colors["playmaker"],
+                                          short_pass_color=viz_colors["short"], long_pass_color=viz_colors["long"])
             st.pyplot(fig_n2, use_container_width=True)
             plt.close(fig_n2)
 
